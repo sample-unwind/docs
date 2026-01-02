@@ -1,0 +1,86 @@
+@startuml cqrs-event-sourcing
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title CQRS in Event Sourcing - reservation-service
+
+actor "Client" as client
+
+package "reservation-service" {
+    
+    package "Command Side (Write)" #LightYellow {
+        component "GraphQL\nMutations" as mutations {
+            portin "createReservation"
+            portin "confirmReservation"
+            portin "cancelReservation"
+            portin "completeReservation"
+            portin "payReservation"
+        }
+        
+        component "Business\nLogic" as logic
+        
+        component "ReservationAggregate" as aggregate
+    }
+    
+    database "Event Store" as eventstore #Pink {
+        file "RESERVATION_CREATED" as e1
+        file "PAYMENT_PROCESSED" as e2
+        file "RESERVATION_CONFIRMED" as e3
+        file "RESERVATION_CANCELLED" as e4
+        file "RESERVATION_COMPLETED" as e5
+    }
+    
+    component "ReservationProjector" as projector #LightBlue
+    
+    package "Query Side (Read)" #LightGreen {
+        component "GraphQL\nQueries" as queries {
+            portout "reservations"
+            portout "reservationById"
+            portout "reservationsByUser"
+            portout "checkAvailability"
+            portout "eventsByReservation"
+        }
+        
+        database "Read Model\n(reservations table)" as readmodel #LightGray
+    }
+}
+
+' Command flow
+client --> mutations : 1. GraphQL Mutation
+mutations --> logic : 2. Validate
+logic --> aggregate : 3. Create/Update
+aggregate --> eventstore : 4. Append Event
+eventstore --> projector : 5. On Event
+projector --> readmodel : 6. Update View
+
+' Query flow
+client --> queries : A. GraphQL Query
+queries --> readmodel : B. Read Data
+readmodel --> queries : C. Return Data
+queries --> client : D. Response
+
+' Event sourcing details
+note right of eventstore
+    **Append-only log**
+    - Immutable events
+    - Ordered by version
+    - Full audit trail
+    - Time travel capable
+end note
+
+note right of projector
+    **Projection**
+    - Applies events to read model
+    - Can rebuild from scratch
+    - POST /admin/rebuild
+end note
+
+note right of readmodel
+    **Optimized for queries**
+    - Denormalized data
+    - Indexed fields
+    - Fast reads
+    - RLS enabled
+end note
+
+@enduml

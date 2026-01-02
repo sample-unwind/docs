@@ -1,0 +1,88 @@
+@startuml arhitektura
+!theme plain
+skinparam backgroundColor #FEFEFE
+skinparam componentStyle rectangle
+
+title Parkora - Arhitektura sistema
+
+cloud "Internet" as internet {
+}
+
+package "Azure AKS Cluster" as aks {
+    
+    package "kong namespace" as kong_ns {
+        component "Kong Ingress\nController" as kong <<API Gateway>> #LightBlue
+        note right of kong : LoadBalancer IP\n72.144.69.17
+    }
+    
+    package "parkora namespace" as parkora_ns {
+        component "Frontend\n(SvelteKit)" as frontend <<Web App>> #LightGreen
+        component "user-service\n(Python/GraphQL)" as user <<Microservice>> #LightYellow
+        component "parking-service\n(Go/REST)" as parking <<Microservice>> #LightYellow
+        component "reservation-service\n(Python/GraphQL)" as reservation <<Microservice>> #LightYellow
+        component "payment-service\n(Python/gRPC)" as payment <<Microservice>> #LightYellow
+        component "notification-service\n(Python)" as notification <<Microservice>> #LightYellow
+        
+        database "RabbitMQ" as rabbitmq <<Message Broker>> #Pink
+        
+        package "Monitoring" as monitoring {
+            component "Prometheus" as prometheus
+            component "Grafana" as grafana
+            component "Elasticsearch" as elastic
+            component "Kibana" as kibana
+        }
+    }
+    
+    package "keycloak namespace" as keycloak_ns {
+        component "Keycloak" as keycloak <<IAM>> #LightCoral
+        database "PostgreSQL" as postgres <<Database>> #LightGray
+    }
+    
+    package "cert-manager namespace" as certmanager_ns {
+        component "cert-manager" as certmanager <<TLS>>
+    }
+}
+
+cloud "External Services" as external {
+    component "Supabase\n(PostgreSQL)" as supabase <<Database>> #Orange
+    component "OpenWeatherMap\nAPI" as weather <<External API>>
+    component "ntfy.sh" as ntfy <<Push Notifications>>
+    component "Let's Encrypt" as letsencrypt <<CA>>
+}
+
+' Internet connections
+internet --> kong : HTTPS
+
+' Kong routing
+kong --> frontend : /
+kong --> user : /api/v1/user
+kong --> parking : /api/v1/parking
+kong --> reservation : /api/v1/reservation
+kong --> payment : /api/v1/payment
+kong --> keycloak : /auth
+
+' Service to database connections
+user --> postgres : user_service DB
+reservation --> postgres : reservation_service DB
+payment --> postgres : payment_service DB
+keycloak --> postgres : keycloak DB
+
+' External connections
+parking --> supabase : Parking data
+parking --> weather : Weather API\n(Circuit Breaker)
+notification --> ntfy : Push notifications
+certmanager --> letsencrypt : TLS certificates
+
+' Inter-service communication
+reservation --> payment : gRPC :50051
+reservation --> parking : HTTP
+payment --> rabbitmq : Publish events
+rabbitmq --> notification : Consume events
+
+' Auth
+frontend ..> keycloak : OIDC/OAuth2
+user ..> keycloak : Token validation
+reservation ..> keycloak : Token validation
+payment ..> keycloak : Token validation
+
+@enduml

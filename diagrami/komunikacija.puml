@@ -1,0 +1,104 @@
+@startuml komunikacija
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title Parkora - Komunikacija med servisi
+
+actor "User" as user
+participant "Frontend\n(SvelteKit)" as frontend #LightGreen
+participant "Kong\nAPI Gateway" as kong #LightBlue
+participant "Keycloak\n(IAM)" as keycloak #LightCoral
+
+box "Microservices" #LightYellow
+    participant "user-service\n(GraphQL)" as user_svc
+    participant "parking-service\n(REST)" as parking_svc
+    participant "reservation-service\n(GraphQL)" as reservation_svc
+    participant "payment-service\n(gRPC)" as payment_svc
+    participant "notification-service" as notification_svc
+end box
+
+queue "RabbitMQ" as rabbitmq #Pink
+participant "ntfy.sh" as ntfy #Orange
+database "PostgreSQL" as postgres
+database "Supabase" as supabase
+
+== Avtentikacija (OIDC Flow) ==
+
+user -> frontend : 1. Click "Login"
+frontend -> keycloak : 2. Redirect to /auth
+keycloak -> user : 3. Login form
+user -> keycloak : 4. Credentials
+keycloak -> frontend : 5. Authorization code
+frontend -> keycloak : 6. Exchange for tokens
+keycloak -> frontend : 7. access_token, refresh_token
+note right : Tokens stored in\nHTTP-only cookies
+
+== Sinhrona komunikacija (REST/GraphQL) ==
+
+user -> frontend : 8. View parkings
+frontend -> kong : 9. GET /api/v1/parking/analytics/parkings\nAuthorization: Bearer <token>
+kong -> parking_svc : 10. Forward (strip path)
+parking_svc -> supabase : 11. Query parking data
+supabase -> parking_svc : 12. Data
+parking_svc -> kong : 13. Response
+kong -> frontend : 14. JSON
+frontend -> user : 15. Display
+
+== Sinhrona komunikacija (gRPC) ==
+
+user -> frontend : 16. Pay reservation
+frontend -> kong : 17. mutation payReservation
+kong -> reservation_svc : 18. GraphQL request
+reservation_svc -> reservation_svc : 19. Validate reservation
+
+group gRPC Call
+    reservation_svc -> payment_svc : 20. ProcessPayment(reservation_id, amount)\n[gRPC :50051]
+    payment_svc -> postgres : 21. Save payment
+    postgres -> payment_svc : 22. OK
+    payment_svc -> reservation_svc : 23. PaymentResponse(success, txn_id)
+end
+
+reservation_svc -> postgres : 24. Update reservation status
+reservation_svc -> kong : 25. GraphQL response
+kong -> frontend : 26. Response
+frontend -> user : 27. Payment confirmed
+
+== Asinhrona komunikacija (RabbitMQ) ==
+
+payment_svc -> rabbitmq : 28. Publish "payment.processed"\n[exchange: parkora_events]
+note right of rabbitmq : Message persisted\nin queue
+
+rabbitmq -> notification_svc : 29. Consume message\n[queue: notification_queue]
+notification_svc -> ntfy : 30. POST notification
+ntfy -> user : 31. Push notification\n"Payment successful!"
+
+== Multitenancy ==
+
+note over kong, postgres
+    All requests include:
+    X-Tenant-ID: 00000000-0000-0000-0000-000000000001
+    
+    PostgreSQL RLS enforces data isolation:
+    SET app.tenant_id = '<tenant-id>'
+    SELECT * FROM users WHERE tenant_id = current_setting('app.tenant_id')
+end note
+
+== Circuit Breaker (External API) ==
+
+user -> frontend : 32. View weather
+frontend -> kong : 33. GET /api/v1/parking/weather
+kong -> parking_svc : 34. Forward
+
+alt Circuit CLOSED (normal)
+    parking_svc -> ntfy : 35a. Call OpenWeatherMap API
+    ntfy -> parking_svc : 36a. Weather data
+    parking_svc -> kong : 37a. Response with X-Circuit-Breaker-State: closed
+else Circuit OPEN (after 3 failures)
+    parking_svc -> parking_svc : 35b. Return fallback
+    parking_svc -> kong : 36b. Fallback response with X-Circuit-Breaker-State: open
+end
+
+kong -> frontend : 38. Response
+frontend -> user : 39. Display weather or "unavailable"
+
+@enduml

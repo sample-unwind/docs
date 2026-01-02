@@ -1,0 +1,135 @@
+@startuml deployment
+!theme plain
+skinparam backgroundColor #FEFEFE
+
+title Parkora - Kubernetes Deployment
+
+node "Azure Cloud" as azure {
+    
+    node "Resource Group: rg-parkora" as rg {
+        
+        node "AKS Cluster: aks-parkora" as aks {
+            
+            frame "Namespace: kong" as ns_kong #LightBlue {
+                component "Kong\nIngress Controller" as kong
+                note bottom of kong
+                    LoadBalancer Service
+                    External IP: 72.144.69.17
+                end note
+            }
+            
+            frame "Namespace: cert-manager" as ns_certmanager #LightGray {
+                component "cert-manager" as certmanager
+                component "ClusterIssuer\nletsencrypt-http01" as issuer
+            }
+            
+            frame "Namespace: keycloak" as ns_keycloak #LightCoral {
+                component "Keycloak Pod" as keycloak_pod {
+                    component "keycloak:26.4" as keycloak_container
+                }
+                component "PostgreSQL Pod" as pg_pod {
+                    component "postgres:16-alpine" as pg_container
+                }
+                component "keycloak-tls\n(Certificate)" as keycloak_cert
+            }
+            
+            frame "Namespace: parkora" as ns_parkora #LightGreen {
+                
+                together {
+                    component "frontend\nDeployment" as frontend_dep {
+                        component "frontend:main" as frontend_c
+                    }
+                    component "frontend-tls\n(Certificate)" as frontend_cert
+                }
+                
+                together {
+                    component "user-service\nDeployment" as user_dep {
+                        component "user-service:master" as user_c
+                    }
+                }
+                
+                together {
+                    component "parking-service\nDeployment" as parking_dep {
+                        component "parking-service:master" as parking_c
+                    }
+                }
+                
+                together {
+                    component "reservation-service\nDeployment" as reservation_dep {
+                        component "reservation-service:master" as reservation_c
+                    }
+                }
+                
+                together {
+                    component "payment-service\nDeployment" as payment_dep {
+                        component "payment-service:master" as payment_c
+                    }
+                }
+                
+                together {
+                    component "notification-service\nDeployment" as notification_dep {
+                        component "notification-service:master" as notification_c
+                    }
+                }
+                
+                component "RabbitMQ\nDeployment" as rabbitmq_dep {
+                    component "rabbitmq:3-management" as rabbitmq_c
+                }
+                
+                frame "Monitoring Stack" as monitoring {
+                    component "Prometheus" as prom
+                    component "Grafana" as graf
+                    component "Elasticsearch" as elastic
+                    component "Kibana" as kibana
+                    component "Filebeat\nDaemonSet" as filebeat
+                }
+            }
+        }
+        
+        storage "Key Vault: kv-parkora" as kv {
+            file "parking-service-supabase-url" as secret1
+            file "parking-service-supabase-key" as secret2
+            file "keycloak-admin-password" as secret3
+            file "rabbitmq-password" as secret4
+        }
+    }
+    
+    storage "Storage Account\nstparkoratfstate" as tfstate {
+        file "terraform.tfstate" as state
+    }
+}
+
+cloud "GitHub Container Registry" as ghcr {
+    artifact "ghcr.io/sample-unwind/frontend" as img_frontend
+    artifact "ghcr.io/sample-unwind/user-service" as img_user
+    artifact "ghcr.io/sample-unwind/parking-service" as img_parking
+    artifact "ghcr.io/sample-unwind/reservation-service" as img_reservation
+    artifact "ghcr.io/sample-unwind/payment-service" as img_payment
+    artifact "ghcr.io/sample-unwind/notification-service" as img_notification
+}
+
+' Image pulls
+img_frontend --> frontend_c : pull
+img_user --> user_c : pull
+img_parking --> parking_c : pull
+img_reservation --> reservation_c : pull
+img_payment --> payment_c : pull
+img_notification --> notification_c : pull
+
+' Key Vault to Pods
+kv ..> parking_dep : CSI Driver
+kv ..> keycloak_pod : CSI Driver
+
+' cert-manager certificates
+certmanager --> frontend_cert : issue
+certmanager --> keycloak_cert : issue
+
+' Ingress routing
+kong --> frontend_dep : /
+kong --> user_dep : /api/v1/user
+kong --> parking_dep : /api/v1/parking
+kong --> reservation_dep : /api/v1/reservation
+kong --> payment_dep : /api/v1/payment
+kong --> keycloak_pod : /auth
+
+@enduml
