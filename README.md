@@ -83,9 +83,9 @@ Parkora je pametni parkirni sistem, implementiran z mikrostoritveno arhitekturo.
 
 ## Člani ekipe
 
-- Šane Bucan (63220036)
-- Stjepan Sazonov (63220288)
-- Gregor Bucar (63220037)
+- Žane Bučan
+- Stjepan Sazonov
+- Gregor Bučar
 
 ---
 
