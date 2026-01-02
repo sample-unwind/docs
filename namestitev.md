@@ -495,7 +495,141 @@ CronJob vsaki 2 minuti restarta deploymente z labelom `auto-update: enabled`.
 
 ---
 
-## 15. Odpravljanje težav
+## 15. Azure Function - Scraper
+
+Serverless funkcija za periodično pobiranje podatkov o parkirni zasedenosti.
+
+### 15.1 Predpogoji
+
+```bash
+# Namesti Azure Functions Core Tools
+npm install -g azure-functions-core-tools@4 --unsafe-perm true
+
+# Preveri namestitev
+func --version
+```
+
+### 15.2 Ustvarjanje Function App
+
+```bash
+# Ustvari Function App (consumption plan - pay per execution)
+az functionapp create \
+  --resource-group rg-parkora \
+  --consumption-plan-location germanywestcentral \
+  --runtime node \
+  --runtime-version 20 \
+  --functions-version 4 \
+  --name func-parkora-scraper \
+  --storage-account stparkoratfstate
+
+# Nastavi environment variables iz Key Vault
+az functionapp config appsettings set \
+  --resource-group rg-parkora \
+  --name func-parkora-scraper \
+  --settings \
+    SUPABASE_URL="$(az keyvault secret show --vault-name kv-parkora --name parking-service-supabase-url --query value -o tsv)" \
+    SUPABASE_SERVICE_ROLE_KEY="$(az keyvault secret show --vault-name kv-parkora --name parking-service-supabase-key --query value -o tsv)"
+```
+
+### 15.3 Struktura projekta
+
+```
+lptscraper/
+├── ScraperFunction/
+│   ├── function.json      # Timer trigger konfiguracija
+│   └── index.js           # Funkcija logika
+├── host.json              # Azure Functions host konfiguracija
+├── package.json           # Node.js dependencies
+└── local.settings.json    # Lokalne nastavitve (ni v git)
+```
+
+**`ScraperFunction/function.json`:**
+```json
+{
+  "bindings": [
+    {
+      "name": "myTimer",
+      "type": "timerTrigger",
+      "direction": "in",
+      "schedule": "0 */10 * * * *"
+    }
+  ]
+}
+```
+
+**`host.json`:**
+```json
+{
+  "version": "2.0",
+  "extensionBundle": {
+    "id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "version": "[4.*, 5.0.0)"
+  }
+}
+```
+
+### 15.4 Deployment
+
+```bash
+cd lptscraper
+
+# Inicializiraj Azure Function projekt (če še ni)
+func init --worker-runtime node --language javascript
+
+# Ustvari funkcijo
+func new --name ScraperFunction --template "Timer trigger"
+
+# Deploy funkcije v Azure
+func azure functionapp publish func-parkora-scraper
+```
+
+### 15.5 Preverjanje
+
+```bash
+# Preveri status funkcije
+az functionapp show \
+  --name func-parkora-scraper \
+  --resource-group rg-parkora \
+  --query state -o tsv
+
+# Preveri loge v real-time
+az functionapp log tail \
+  --name func-parkora-scraper \
+  --resource-group rg-parkora
+
+# Ročno proži funkcijo (za testiranje)
+az functionapp function invoke \
+  --resource-group rg-parkora \
+  --name func-parkora-scraper \
+  --function-name ScraperFunction
+
+# Preveri zadnje izvajanje
+az monitor activity-log list \
+  --resource-group rg-parkora \
+  --caller "func-parkora-scraper" \
+  --max-events 5
+```
+
+### 15.6 Monitoring
+
+Funkcija avtomatsko pošilja podatke v Application Insights:
+
+```bash
+# Omogoči Application Insights
+az functionapp update \
+  --name func-parkora-scraper \
+  --resource-group rg-parkora \
+  --set siteConfig.appInsightsInstrumentationKey="<instrumentation-key>"
+```
+
+V Azure Portal:
+1. Pojdi na Function App → `func-parkora-scraper`
+2. Klikni **Monitor** → **Invocations**
+3. Preglej zgodovino izvajanj in morebitne napake
+
+---
+
+## 16. Odpravljanje težav
 
 ### Pod ne starta
 
@@ -545,3 +679,5 @@ SELECT * FROM pg_policies;
 | Restart deployment | `kubectl rollout restart deployment/<name> -n parkora` |
 | View logs | `kubectl logs -n parkora deployment/<name>` |
 | List pods | `kubectl get pods -n parkora` |
+| Deploy Azure Function | `func azure functionapp publish func-parkora-scraper` |
+| View Function logs | `az functionapp log tail --name func-parkora-scraper --resource-group rg-parkora` |

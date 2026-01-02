@@ -130,6 +130,31 @@ Parkora je sestavljena iz več neodvisnih mikrostoritev, ki komunicirajo preko R
 
 ---
 
+### scraper-function (Azure Function)
+
+| Lastnost | Vrednost |
+|----------|----------|
+| **Tip** | Azure Function (Serverless) |
+| **Jezik** | Node.js 20 |
+| **Trigger** | Timer (vsakih 10 minut) |
+| **Baza** | Supabase (PostgreSQL) |
+
+**Funkcionalnosti:**
+- Periodično pobiranje podatkov o zasedenosti parkirišč iz LPT spletne strani
+- Parsiranje HTML z uporabo Cheerio knjižnice
+- Shranjevanje podatkov v Supabase bazo (`parking_availability` tabela)
+- Serverless arhitektura - plačilo samo za izvajanje
+
+**Podatkovni vir:**
+- URL: `https://www.lpt.si/parkirisca/informacije-za-parkiranje/prikaz-zasedenosti-parkirisc`
+- Podatki: Ime parkirišča, število prostih mest, skupno število mest
+
+**Timer konfiguracija:**
+- CRON izraz: `0 */10 * * * *` (vsakih 10 minut)
+- Azure Function App: `func-parkora-scraper`
+
+---
+
 ## Podatkovna plast
 
 ### PostgreSQL (v Kubernetes)
@@ -264,6 +289,8 @@ Parking-service uporablja Supabase za podatke o parkiriščih:
 | `kong` | Kong Ingress Controller |
 | `cert-manager` | cert-manager za TLS certifikate |
 
+**Opomba:** `scraper-function` teče kot Azure Function (serverless) zunaj Kubernetes gruče.
+
 ---
 
 ## Azure viri
@@ -274,6 +301,7 @@ Parking-service uporablja Supabase za podatke o parkiriščih:
 | AKS Cluster | `aks-parkora` | Kubernetes cluster (Free tier, 1x B2ps_v2 ARM node) |
 | Key Vault | `kv-parkora` | Centralno shranjevanje skrivnosti |
 | Storage Account | `stparkoratfstate` | Terraform state backend |
+| Function App | `func-parkora-scraper` | Serverless scraper funkcija (Timer: 10 min) |
 
 **Regija:** `germanywestcentral` (zahteva Azure Student subscription)
 

@@ -13,6 +13,7 @@ Ta dokument opisuje arhitekturne vzorce, ki so implementirani v sistemu Parkora.
 | [Multitenancy (RLS)](#multitenancy---row-level-security) | user, reservation, payment | Izolacija najemnikov |
 | [gRPC](#grpc-komunikacija) | payment, reservation | Sinhrona binarna komunikacija |
 | [Message Queue](#message-queue---rabbitmq) | payment, notification | Asinhrono sporočanje |
+| [Serverless](#serverless-arhitektura) | scraper-function | Periodično izvajanje brez strežnikov |
 
 ---
 
@@ -651,14 +652,118 @@ def consume():
 
 ---
 
+## Serverless arhitektura
+
+### Opis
+
+Serverless arhitektura omogoča izvajanje kode brez upravljanja strežnikov. Funkcija se izvaja samo ko je potrebna (ob trigerju), kar zmanjša stroške in kompleksnost. V Parkori uporabljamo Azure Functions za periodično pobiranje podatkov o zasedenosti parkirišč.
+
+### Implementacija v Parkora
+
+**ScraperFunction** je Azure Function, ki vsakih 10 minut pobere podatke o zasedenosti parkirišč iz LPT spletne strani in jih shrani v Supabase bazo.
+
+**Arhitektura:**
+
+```
+┌─────────────────┐         ┌──────────────────┐        ┌─────────────┐
+│  Timer Trigger  │────────▶│  ScraperFunction │───────▶│  Supabase   │
+│  (10 min)       │         │  (Node.js)       │        │  PostgreSQL │
+└─────────────────┘         └────────┬─────────┘        └─────────────┘
+                                     │
+                                     │ HTTP GET
+                                     ▼
+                            ┌─────────────────┐
+                            │    LPT.si       │
+                            │  (Web scraping) │
+                            └─────────────────┘
+```
+
+### Konfiguracija Azure Function
+
+**`function.json`:**
+```json
+{
+  "bindings": [
+    {
+      "name": "myTimer",
+      "type": "timerTrigger",
+      "direction": "in",
+      "schedule": "0 */10 * * * *"
+    }
+  ]
+}
+```
+
+**Logika funkcije (poenostavljeno):**
+```javascript
+import * as cheerio from "cheerio";
+import { insertParkingAvailability } from "./supabase-client.js";
+
+export default async function (context, myTimer) {
+    const url = "https://www.lpt.si/parkirisca/informacije-za-parkiranje/prikaz-zasedenosti-parkirisc";
+    
+    // Fetch HTML
+    const response = await fetch(url);
+    const html = await response.text();
+    
+    // Parse s Cheerio
+    const $ = cheerio.load(html);
+    
+    // Izvleči podatke o parkiranju
+    $("table tbody tr").each((i, row) => {
+        const name = $(row).find("td:nth-child(1)").text();
+        const available = $(row).find("td:nth-child(2)").text();
+        
+        // Shrani v Supabase
+        await insertParkingAvailability(name, available);
+    });
+    
+    context.log("Scraping completed successfully");
+}
+```
+
+### Prednosti serverless pristopa
+
+| Prednost | Opis |
+|----------|------|
+| **Brez strežnikov** | Ni potrebe po upravljanju infrastrukture |
+| **Pay-per-execution** | Plačilo samo za čas izvajanja (consumption plan) |
+| **Avtomatsko skaliranje** | Azure samodejno skalira glede na obremenitev |
+| **Event-driven** | Proženje na podlagi časovnika ali drugih dogodkov |
+| **Enostavna integracija** | Vgrajena podpora za Azure storitve |
+
+### Monitoring
+
+Azure Functions zagotavlja vgrajeno sledenje:
+
+| Funkcionalnost | Opis |
+|----------------|------|
+| **Application Insights** | Logiranje, metrike, sledenje izjem |
+| **Invocation logs** | Zgodovina vseh izvajanj funkcije |
+| **Failure alerts** | Avtomatsko obveščanje ob napakah |
+| **Live metrics** | Real-time pregled izvajanja |
+
+### Primerjava z Kubernetes CronJob
+
+| Vidik | Azure Function | K8s CronJob |
+|-------|----------------|-------------|
+| **Infrastruktura** | Upravljana | Lastni podi |
+| **Stroški** | Pay-per-execution | Konstantni (pod resources) |
+| **Cold start** | Da (consumption plan) | Ne |
+| **Skaliranje** | Avtomatsko | Ročno/HPA |
+| **Kompleksnost** | Nižja | Višja |
+
+---
+
 ## Povzetek
 
 Parkora implementira več naprednih arhitekturnih vzorcev, ki skupaj zagotavljajo:
 
 - **Zanesljivost**: Circuit Breaker, Message Queue
-- **Skalabilnost**: CQRS, API Gateway, Microservices
+- **Skalabilnost**: CQRS, API Gateway, Microservices, Serverless
 - **Varnost**: Multitenancy z RLS, JWT validacija
 - **Sledljivost**: Event Sourcing, centralizirano beleženje
 - **Učinkovitost**: gRPC, optimiziran read model
+- **Stroškovna učinkovitost**: Serverless arhitektura za periodične naloge
 
 Ti vzorci so del zahtev predmeta RSO in demonstrirajo razumevanje sodobnih pristopov k razvoju oblačnih aplikacij.

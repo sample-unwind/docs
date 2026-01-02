@@ -27,6 +27,7 @@ Parkora je pametni parkirni sistem, implementiran z mikrostoritveno arhitekturo.
 | **Keycloak** | https://keycloak.parkora.crn.si/auth/ | Avtentikacija (OAuth2/OIDC) |
 | **Grafana** | https://grafana.parkora.crn.si/ | Monitoring in metrike |
 | **Kibana** | https://kibana.parkora.crn.si/ | Centralizirano beleženje |
+| **Scraper Function** | Azure Portal | Serverless scraper (timer 10min) |
 
 ## API Endpoints
 
@@ -54,6 +55,7 @@ Parkora je pametni parkirni sistem, implementiran z mikrostoritveno arhitekturo.
 
 ### Infrastruktura
 - **Azure AKS** - Kubernetes cluster
+- **Azure Functions** - Serverless izvajanje scraperja
 - **Terraform** - Infrastructure as Code
 - **Helm** - Kubernetes package manager
 - **Kong** - API Gateway / Ingress Controller

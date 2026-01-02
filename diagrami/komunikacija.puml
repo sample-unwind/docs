@@ -101,4 +101,26 @@ end
 kong -> frontend : 38. Response
 frontend -> user : 39. Display weather or "unavailable"
 
+== Serverless Scraper (Azure Function) ==
+
+participant "Azure\nTimer Trigger" as timer #LightCyan
+participant "ScraperFunction\n(Node.js)" as scraper #LightCyan
+participant "LPT.si" as lpt_site #Gray
+
+timer -> scraper : 40. Trigger (vsakih 10 min)
+scraper -> lpt_site : 41. HTTP GET /prikaz-zasedenosti
+lpt_site -> scraper : 42. HTML response
+scraper -> scraper : 43. Parse HTML (Cheerio)
+scraper -> supabase : 44. INSERT parking_availability
+supabase -> scraper : 45. OK
+scraper -> timer : 46. Execution complete
+
+note over timer, supabase
+    Serverless izvajanje:
+    - Brez trajne infrastrukture
+    - Plačilo samo za čas izvajanja
+    - Avtomatsko skaliranje
+    - CRON: 0 */10 * * * *
+end note
+
 @enduml

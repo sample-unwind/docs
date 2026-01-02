@@ -48,6 +48,12 @@ cloud "External Services" as external {
     component "OpenWeatherMap\nAPI" as weather <<External API>>
     component "ntfy.sh" as ntfy <<Push Notifications>>
     component "Let's Encrypt" as letsencrypt <<CA>>
+    component "LPT.si" as lpt <<Web Source>>
+}
+
+package "Azure Serverless" as serverless {
+    component "ScraperFunction\n(Node.js)" as azfunc <<Azure Function>> #LightCyan
+    note right of azfunc : Timer trigger\nvsakih 10 minut
 }
 
 ' Internet connections
@@ -72,6 +78,10 @@ parking --> supabase : Parking data
 parking --> weather : Weather API\n(Circuit Breaker)
 notification --> ntfy : Push notifications
 certmanager --> letsencrypt : TLS certificates
+
+' Serverless scraper
+azfunc --> lpt : Scrape parking data
+azfunc --> supabase : Store availability
 
 ' Inter-service communication
 reservation --> payment : gRPC :50051

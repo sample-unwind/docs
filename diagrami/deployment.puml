@@ -92,6 +92,16 @@ node "Azure Cloud" as azure {
             file "keycloak-admin-password" as secret3
             file "rabbitmq-password" as secret4
         }
+        
+        frame "Azure Functions" as func_app #LightCyan {
+            component "func-parkora-scraper" as scraper_func {
+                component "ScraperFunction\n(Timer: */10 * * * *)" as scraper_timer
+            }
+            note bottom of scraper_func
+                Serverless execution
+                Consumption plan
+            end note
+        }
     }
     
     storage "Storage Account\nstparkoratfstate" as tfstate {
@@ -106,6 +116,11 @@ cloud "GitHub Container Registry" as ghcr {
     artifact "ghcr.io/sample-unwind/reservation-service" as img_reservation
     artifact "ghcr.io/sample-unwind/payment-service" as img_payment
     artifact "ghcr.io/sample-unwind/notification-service" as img_notification
+}
+
+cloud "External Services" as external {
+    database "Supabase\n(PostgreSQL)" as supabase #Orange
+    component "LPT.si" as lpt #Gray
 }
 
 ' Image pulls
@@ -131,5 +146,10 @@ kong --> parking_dep : /api/v1/parking
 kong --> reservation_dep : /api/v1/reservation
 kong --> payment_dep : /api/v1/payment
 kong --> keycloak_pod : /auth
+
+' Serverless scraper connections
+scraper_func --> lpt : HTTP GET (scrape)
+scraper_func --> supabase : INSERT parking data
+parking_dep --> supabase : Query parking data
 
 @enduml
